@@ -1,0 +1,145 @@
+#SERVER
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <math.h>  // Include math library for sqrt
+
+int main() {
+    int sockfd, newsockfd, portno;
+    socklen_t clilen;
+    char equation[256];
+    double roots[2];  // Store the roots of the quadratic equation
+    struct sockaddr_in serv_addr, cli_addr;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Error opening socket");
+        exit(1);
+    }
+
+    bzero((char*)&serv_addr, sizeof(serv_addr));
+    portno = 12345;
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(portno);
+
+    if (bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Error on binding");
+        exit(1);
+    }
+
+    listen(sockfd, 5);
+    clilen = sizeof(cli_addr);
+
+    newsockfd = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen);
+    if (newsockfd < 0) {
+        perror("Error on accept");
+        exit(1);
+    }
+
+    bzero(equation, 256);
+
+    // Receive the quadratic equation from the client
+    int n = read(newsockfd, equation, sizeof(equation));
+    if (n < 0) {
+        perror("Error reading from socket");
+        exit(1);
+    }
+
+    // Parse the quadratic equation and calculate roots
+    double a, b, c;
+    sscanf(equation, "%lf %lf %lf", &a, &b, &c);
+
+    double discriminant = b * b - 4 * a * c;
+
+    if (discriminant < 0) {
+        roots[0] = roots[1] = NAN;  // No real roots (NaN for Not-a-Number)
+    } else {
+        roots[0] = (-b + sqrt(discriminant)) / (2 * a);
+        roots[1] = (-b - sqrt(discriminant)) / (2 * a);
+    }
+
+    // Send the roots back to the client
+    n = write(newsockfd, roots, sizeof(roots));
+    if (n < 0) {
+        perror("Error writing to socket");
+        exit(1);
+    }
+
+    close(newsockfd);
+    close(sockfd);
+
+    return 0;
+}
+
+#CLIENT
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <math.h>  // Include math library for sqrt
+
+int main() {
+    int sockfd, portno, n;
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+    char equation[256];
+    double roots[2];
+    
+    portno = 12345;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Error opening socket");
+        exit(1);
+    }
+
+    server = gethostbyname("127.0.0.1");
+    if (server == NULL) {
+        fprintf(stderr, "Error, no such host\n");
+        exit(1);
+    }
+
+    bzero((char *)&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+
+    bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+    serv_addr.sin_port = htons(portno);
+
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Error connecting");
+        exit(1);
+    }
+
+    // Prompt the user to enter the coefficients of the quadratic equation
+    printf("Enter the coefficients of the quadratic equation (a b c): ");
+    fgets(equation, sizeof(equation), stdin);
+
+    // Send the equation to the server
+    n = write(sockfd, equation, sizeof(equation));
+    if (n < 0) {
+        perror("Error writing to socket");
+        exit(1);
+    }
+
+    // Receive the roots from the server
+    n = read(sockfd, roots, sizeof(roots));
+    if (n < 0) {
+        perror("Error reading from socket");
+        exit(1);
+    }
+
+    printf("Root 1: %.2lf\n", roots[0]);
+    printf("Root 2: %.2lf\n", roots[1]);
+
+    close(sockfd);
+
+    return 0;
+}
